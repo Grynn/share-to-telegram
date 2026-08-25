@@ -1,46 +1,67 @@
 import AppKit
 import UniformTypeIdentifiers
 
-/// Share-sheet UI: an optional message, a destination picker, and nothing else
-/// in the way. Return sends and dismisses immediately; the actual delivery is
-/// done out-of-process by the relay LaunchAgent (this extension is sandboxed
-/// and cannot reach the network or exec CLIs itself).
+/// Share-sheet UI: an optional message, a destination picker built from the
+/// user's configured destinations, and nothing else in the way. Return sends
+/// and dismisses immediately; delivery is done out of process by the relay
+/// LaunchAgent (this extension is sandboxed — no network, no exec).
 ///
-/// Keys:  ⏎ send · ⎋ cancel · ⌘1 Telegram · ⌘2 ytq · ⇥ into the buttons
+/// Keys:  ⏎ send · ⎋ cancel · ⌘1…⌘9 pick a destination
 final class ShareViewController: NSViewController {
 
-    private enum Destination: Int {
-        case telegram = 0, ytq = 1
-        var jobValue: String { self == .ytq ? "ytq" : "telegram" }
+    /// Mirror of one entry in destinations.json, published by `share-to-claw sync`.
+    private struct Destination {
+        let id: String
+        let label: String
+        let accepts: Set<String>
+        let autoForHosts: [String]
+        let handlesFiles: Bool
+        let isDefault: Bool
+
+        init?(_ dict: [String: Any]) {
+            guard let id = dict["id"] as? String else { return nil }
+            self.id = id
+            label = dict["label"] as? String ?? id
+            accepts = Set(dict["accepts"] as? [String] ?? ["text", "url", "file", "image"])
+            autoForHosts = dict["auto_for_hosts"] as? [String] ?? []
+            handlesFiles = dict["handles_files"] as? Bool ?? true
+            isDefault = dict["default"] as? Bool ?? false
+        }
     }
 
     // Inside the sandbox, NSHomeDirectory() is the container's Data dir.
     private let queueDir = NSHomeDirectory() + "/queue"
+    private var destsFile: String { NSHomeDirectory() + "/destinations.json" }
 
     private let summaryLabel = NSTextField(labelWithString: "Reading shared item…")
     private let messageField = NSTextField()
-    private let destPicker = NSSegmentedControl(
-        labels: ["Telegram", "ytq"], trackingMode: .selectOne, target: nil, action: nil)
     private let hintLabel = NSTextField(labelWithString: "⏎ send · ⎋ cancel")
     private let sendButton = NSButton(title: "Send", target: nil, action: nil)
     private let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
+    private var picker: NSSegmentedControl?
+    private var popup: NSPopUpButton?
+
+    private var destinations: [Destination] = []
+    private var selection = 0
+    private var destinationTouched = false
 
     private var texts: [String] = []
     private var files: [String] = []
     private var loaded = false
     private var sendPending = false
     private var keyMonitor: Any?
-    private var destinationTouched = false
     private var stageDir: String?
 
-    private var destination: Destination {
-        Destination(rawValue: destPicker.selectedSegment) ?? .telegram
+    private var current: Destination? {
+        destinations.indices.contains(selection) ? destinations[selection] : nil
     }
 
     // MARK: - UI
 
     override func loadView() {
-        let width: CGFloat = 440
+        destinations = Self.loadDestinations(from: destsFile)
+
+        let width: CGFloat = 460
         let root = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 156))
 
         summaryLabel.frame = NSRect(x: 20, y: 118, width: width - 40, height: 18)
@@ -53,22 +74,35 @@ final class ShareViewController: NSViewController {
         messageField.placeholderString = "Message (optional)"
         messageField.font = .systemFont(ofSize: 13)
         messageField.bezelStyle = .roundedBezel
-        messageField.focusRingType = .default
         messageField.target = self
         messageField.action = #selector(send)
         root.addSubview(messageField)
 
-        destPicker.frame = NSRect(x: 20, y: 20, width: 168, height: 26)
-        destPicker.selectedSegment = 0
-        destPicker.target = self
-        destPicker.action = #selector(destinationChanged)
-        destPicker.setToolTip("⌘1", forSegment: 0)
-        destPicker.setToolTip("⌘2", forSegment: 1)
-        root.addSubview(destPicker)
+        // Up to four destinations fit as segments; beyond that use a pop-up.
+        let pickerWidth = min(CGFloat(destinations.count) * 92 + 8, 250)
+        if destinations.count <= 4 {
+            let control = NSSegmentedControl(labels: destinations.map(\.label),
+                                             trackingMode: .selectOne, target: self,
+                                             action: #selector(pickerChanged))
+            control.frame = NSRect(x: 20, y: 20, width: pickerWidth, height: 26)
+            for (i, _) in destinations.enumerated() { control.setToolTip("⌘\(i + 1)", forSegment: i) }
+            root.addSubview(control)
+            picker = control
+        } else {
+            let control = NSPopUpButton(frame: NSRect(x: 20, y: 20, width: 200, height: 26))
+            control.addItems(withTitles: destinations.map(\.label))
+            control.target = self
+            control.action = #selector(pickerChanged)
+            root.addSubview(control)
+            popup = control
+        }
 
         hintLabel.frame = NSRect(x: 20, y: 2, width: width - 40, height: 14)
         hintLabel.font = .systemFont(ofSize: 10)
         hintLabel.textColor = .tertiaryLabelColor
+        hintLabel.stringValue = destinations.count > 1
+            ? "⏎ send · ⎋ cancel · ⌘1–⌘\(min(destinations.count, 9)) destination"
+            : "⏎ send · ⎋ cancel"
         root.addSubview(hintLabel)
 
         cancelButton.frame = NSRect(x: width - 196, y: 16, width: 84, height: 32)
@@ -87,11 +121,26 @@ final class ShareViewController: NSViewController {
 
         view = root
         preferredContentSize = root.frame.size
+
+        selection = destinations.firstIndex(where: \.isDefault) ?? 0
+        syncPicker()
+    }
+
+    private static func loadDestinations(from path: String) -> [Destination] {
+        guard let data = FileManager.default.contents(atPath: path),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let list = root["destinations"] as? [[String: Any]]
+        else {
+            // No published config yet — a single Telegram destination is the
+            // historical default and keeps the panel usable.
+            return [Destination(["id": "telegram", "label": "Telegram", "default": true])].compactMap { $0 }
+        }
+        return list.compactMap(Destination.init)
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        collectItems()  // starts while the user is still reading/typing
+        collectItems()  // runs while the user is still reading/typing
     }
 
     override func viewDidAppear() {
@@ -99,31 +148,69 @@ final class ShareViewController: NSViewController {
         view.window?.makeFirstResponder(messageField)
         view.window?.defaultButtonCell = sendButton.cell as? NSButtonCell
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, event.modifierFlags.contains(.command) else { return event }
-            switch event.charactersIgnoringModifiers {
-            case "1": self.selectDestination(.telegram); return nil
-            case "2": self.selectDestination(.ytq); return nil
-            default: return event
-            }
+            guard let self, event.modifierFlags.contains(.command),
+                  let chars = event.charactersIgnoringModifiers,
+                  let digit = Int(chars), digit >= 1, digit <= self.destinations.count
+            else { return event }
+            self.select(index: digit - 1)
+            return nil
         }
     }
 
-    private func selectDestination(_ dest: Destination) {
-        destinationTouched = true
-        destPicker.selectedSegment = dest.rawValue
-        refreshForDestination()
+    // MARK: - Destination selection
+
+    @objc private func pickerChanged() {
+        select(index: picker?.selectedSegment ?? popup?.indexOfSelectedItem ?? 0)
     }
 
-    @objc private func destinationChanged() {
+    private func select(index: Int) {
+        guard destinations.indices.contains(index) else { return }
         destinationTouched = true
-        refreshForDestination()
+        selection = index
+        syncPicker()
     }
 
-    private func refreshForDestination() {
-        messageField.placeholderString = destination == .ytq
-            ? "Message (Telegram only — ignored for ytq)"
+    private func syncPicker() {
+        picker?.selectedSegment = selection
+        popup?.selectItem(at: selection)
+        guard let dest = current else { return }
+        sendButton.title = dest.accepts.contains("url") && dest.accepts.count == 1 ? "Queue" : "Send"
+        messageField.placeholderString = dest.accepts.contains("url") && dest.accepts.count == 1
+            ? "Message (ignored by \(dest.label))"
             : "Message (optional)"
-        sendButton.title = destination == .ytq ? "Queue" : "Send"
+        if loaded { validate() }
+    }
+
+    /// Grey out the send button when the payload doesn't suit the destination.
+    private func validate() {
+        guard let dest = current else { return }
+        let kinds = payloadKinds()
+        let hasFiles = !files.isEmpty
+        let fileOK = !hasFiles || dest.handlesFiles
+        let needsURL = dest.accepts == ["url"]
+        let hasURL = texts.contains { $0.contains("://") }
+        let ok = fileOK && (!needsURL || hasURL)
+        sendButton.isEnabled = ok
+        if !ok {
+            summaryLabel.stringValue = needsURL && !hasURL
+                ? "⚠️ \(dest.label) needs a URL"
+                : "⚠️ \(dest.label) can't take files"
+        } else if summaryLabel.stringValue.hasPrefix("⚠️") {
+            summaryLabel.stringValue = describeItems()
+        }
+        _ = kinds
+    }
+
+    private func payloadKinds() -> Set<String> {
+        var kinds = Set<String>()
+        if texts.contains(where: { $0.contains("://") }) { kinds.insert("url") }
+        if texts.contains(where: { !$0.contains("://") }) { kinds.insert("text") }
+        for f in files {
+            let ext = (f as NSString).pathExtension.lowercased()
+            kinds.insert(["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff"].contains(ext)
+                         ? "image" : "file")
+        }
+        return kinds
     }
 
     // MARK: - Collect shared items
@@ -136,15 +223,15 @@ final class ShareViewController: NSViewController {
             return
         }
 
-        let stageDir = queueDir + "/.staging/" + UUID().uuidString
-        self.stageDir = stageDir
-        try? FileManager.default.createDirectory(atPath: stageDir, withIntermediateDirectories: true)
+        let stage = queueDir + "/.staging/" + UUID().uuidString
+        stageDir = stage
+        try? FileManager.default.createDirectory(atPath: stage, withIntermediateDirectories: true)
 
         let lock = NSLock()
         let group = DispatchGroup()
         for (index, provider) in providers.enumerated() {
             group.enter()
-            loadBest(from: provider, spoolDir: stageDir, index: index) { text, file in
+            loadBest(from: provider, spoolDir: stage, index: index) { text, file in
                 lock.lock()
                 if let text { self.texts.append(text) }
                 if let file { self.files.append(file) }
@@ -161,12 +248,23 @@ final class ShareViewController: NSViewController {
     private func finishLoading(summary: String) {
         loaded = true
         summaryLabel.stringValue = summary
-        if !destinationTouched, files.isEmpty, !texts.isEmpty,
-           texts.allSatisfy({ Self.looksLikeVideoURL($0) }) {
-            destPicker.selectedSegment = Destination.ytq.rawValue  // auto-pick, still overridable
-            refreshForDestination()
-        }
+        autoSelectDestination()
+        validate()
         if sendPending { writeJobAndDismiss() }
+    }
+
+    /// A YouTube/X link picks the ytq-style destination that claims that host.
+    private func autoSelectDestination() {
+        guard !destinationTouched, files.isEmpty, !texts.isEmpty else { return }
+        let hosts = texts.compactMap { URL(string: $0.trimmingCharacters(in: .whitespaces))?.host?.lowercased() }
+            .map { $0.hasPrefix("www.") ? String($0.dropFirst(4)) : $0 }
+        guard hosts.count == texts.count, !hosts.isEmpty else { return }
+        if let index = destinations.firstIndex(where: { dest in
+            !dest.autoForHosts.isEmpty && hosts.allSatisfy { dest.autoForHosts.contains($0) }
+        }) {
+            selection = index
+            syncPicker()
+        }
     }
 
     private func describeItems() -> String {
@@ -182,15 +280,6 @@ final class ShareViewController: NSViewController {
             parts.append(names.count <= 2 ? names.joined(separator: ", ") : "\(names.count) files")
         }
         return parts.isEmpty ? "Nothing usable in the shared items" : parts.joined(separator: " · ")
-    }
-
-    /// Video hosts that ytq knows how to fetch.
-    private static func looksLikeVideoURL(_ text: String) -> Bool {
-        guard let host = URL(string: text.trimmingCharacters(in: .whitespaces))?.host?.lowercased()
-        else { return false }
-        let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-        return ["youtube.com", "m.youtube.com", "youtu.be", "x.com", "twitter.com",
-                "mobile.twitter.com"].contains(bare)
     }
 
     /// Pick the single richest representation a provider offers.
@@ -279,11 +368,7 @@ final class ShareViewController: NSViewController {
     // MARK: - Send
 
     @objc private func send() {
-        guard !sendPending else { return }
-        if destination == .ytq && loaded && !texts.contains(where: { $0.contains("://") }) {
-            flash("ytq needs a URL — switch to Telegram (⌘1)")
-            return
-        }
+        guard !sendPending, sendButton.isEnabled else { return }
         if !loaded {  // user was faster than the item loader; go as soon as it lands
             sendPending = true
             sendButton.isEnabled = false
@@ -298,13 +383,9 @@ final class ShareViewController: NSViewController {
         let text = texts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !files.isEmpty || !message.isEmpty else {
             flash("Nothing to send")
-            sendPending = false
-            sendButton.isEnabled = true
             return
         }
 
-        let job: [String: Any] = ["dest": destination.jobValue, "message": message,
-                                  "text": text, "files": files]
         let jobDir = queueDir + "/" + UUID().uuidString
         let fm = FileManager.default
         do {
@@ -317,15 +398,13 @@ final class ShareViewController: NSViewController {
                 try? fm.moveItem(atPath: path, toPath: dest)
                 moved.append(fm.fileExists(atPath: dest) ? dest : path)
             }
-            var finalJob = job
-            finalJob["files"] = moved
-            let data = try JSONSerialization.data(withJSONObject: finalJob, options: [.prettyPrinted])
+            let job: [String: Any] = ["dest": current?.id ?? "", "message": message,
+                                      "text": text, "files": moved]
+            let data = try JSONSerialization.data(withJSONObject: job, options: [.prettyPrinted])
             try data.write(to: URL(fileURLWithPath: jobDir + "/job.json.tmp"))
             try fm.moveItem(atPath: jobDir + "/job.json.tmp", toPath: jobDir + "/job.json")
         } catch {
             flash("Could not queue: \(error.localizedDescription)")
-            sendPending = false
-            sendButton.isEnabled = true
             return
         }
 
@@ -338,12 +417,14 @@ final class ShareViewController: NSViewController {
         cleanUp()
         if let stageDir { try? FileManager.default.removeItem(atPath: stageDir) }
         extensionContext?.cancelRequest(withError: NSError(
-            domain: "SendToMyBot", code: NSUserCancelledError,
+            domain: "ShareToClaw", code: NSUserCancelledError,
             userInfo: [NSLocalizedDescriptionKey: "Cancelled"]))
     }
 
     private func flash(_ message: String) {
         summaryLabel.stringValue = "⚠️ " + message
+        sendPending = false
+        sendButton.isEnabled = true
         NSSound.beep()
     }
 

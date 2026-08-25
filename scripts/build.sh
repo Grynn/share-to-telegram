@@ -1,10 +1,10 @@
 #!/bin/zsh
-# Build SendToMyBot.app (host app + sandboxed share extension) into a directory.
+# Build ShareToClaw.app (host app + sandboxed share extension) into a directory.
 # Usage: scripts/build.sh [DEST_DIR]   (default: <repo>/build)
 set -euo pipefail
 
-APP_ID="app.sendtomybot"
-APP_NAME="SendToMyBot"
+APP_ID="app.sharetoclaw"
+APP_NAME="ShareToClaw"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="${1:-$ROOT/build}"

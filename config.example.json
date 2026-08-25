@@ -1,0 +1,45 @@
+{
+  "//": "Copy to ~/.config/share-to-claw/config.json, or just run: share-to-claw setup",
+  "telegram": {
+    "//": "written by `share-to-claw login`; api_id/api_hash from my.telegram.org/apps",
+    "api_id": 0,
+    "api_hash": "",
+    "chat_id": 0,
+    "chat_name": ""
+  },
+  "destinations": [
+    {
+      "id": "claw",
+      "label": "claw",
+      "type": "webhook",
+      "default": true,
+      "url": "https://your-gateway.example.com/hooks/wake",
+      "token": "shared-secret-or-{\"env\":\"MY_TOKEN\"}-or-{\"file\":\"~/.secret\"}",
+      "body": { "text": "{all}", "mode": "now" },
+      "accepts": ["text", "url"],
+      "files_via": "telegram"
+    },
+    {
+      "id": "telegram",
+      "label": "Telegram",
+      "type": "telegram",
+      "accepts": ["text", "url", "file", "image"]
+    },
+    {
+      "id": "ytq",
+      "label": "ytq",
+      "type": "command",
+      "command": ["ytq", "add", "{urls}", "--by", "share sheet"],
+      "accepts": ["url"],
+      "auto_for_hosts": ["youtube.com", "youtu.be", "x.com", "twitter.com"]
+    },
+    {
+      "id": "whatsapp",
+      "label": "WhatsApp",
+      "type": "command",
+      "enabled": false,
+      "command": ["wacli", "send", "--to", "1555550123", "--text", "{all}"],
+      "accepts": ["text", "url"]
+    }
+  ]
+}

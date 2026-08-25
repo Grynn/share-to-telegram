@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>app.sendtomybot.share</string>
+	<string>app.sharetoclaw.share</string>
 	<key>CFBundleName</key>
-	<string>Send to My Bot</string>
+	<string>Share to Claw</string>
 	<key>CFBundleDisplayName</key>
-	<string>Send to My Bot</string>
+	<string>Share to Claw</string>
 	<key>CFBundleExecutable</key>
-	<string>SendToMyBotExt</string>
+	<string>ShareToClawExt</string>
 	<key>CFBundlePackageType</key>
 	<string>XPC!</string>
 	<key>CFBundleShortVersionString</key>
@@ -33,7 +33,7 @@
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.share-services</string>
 		<key>NSExtensionPrincipalClass</key>
-		<string>SendToMyBotExt.ShareViewController</string>
+		<string>ShareToClawExt.ShareViewController</string>
 		<key>NSExtensionAttributes</key>
 		<dict>
 			<key>NSExtensionActivationRule</key>

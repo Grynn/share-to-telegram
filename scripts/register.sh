@@ -1,10 +1,10 @@
 #!/bin/zsh
 # Register the share extension with macOS and load the relay LaunchAgent.
-# Usage: scripts/register.sh --app <SendToMyBot.app> --script <bot_send.py> --uv <uv>
+# Usage: scripts/register.sh --app <ShareToClaw.app> --script <share_to_claw.py> --uv <uv>
 set -euo pipefail
 
-APP_ID="app.sendtomybot"
-APP_NAME="SendToMyBot"
+APP_ID="app.sharetoclaw"
+APP_NAME="ShareToClaw"
 AGENT_LABEL="$APP_ID.relay"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG="$HOME/Library/Logs/$APP_NAME.log"
@@ -19,7 +19,7 @@ while [[ $# -gt 0 ]]; do
         *) echo "unknown argument: $1"; exit 2 ;;
     esac
 done
-[[ -d "$APP" && -f "$SCRIPT" && -x "$UV" ]] || { echo "usage: register.sh --app <.app> --script <bot_send.py> --uv <uv>"; exit 2; }
+[[ -d "$APP" && -f "$SCRIPT" && -x "$UV" ]] || { echo "usage: register.sh --app <.app> --script <share_to_claw.py> --uv <uv>"; exit 2; }
 
 TEMPLATE="$ROOT/agent/relay.plist.template"
 [[ -f "$TEMPLATE" ]] || TEMPLATE="$(dirname "$SCRIPT")/relay.plist.template"
@@ -44,8 +44,8 @@ launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$AGENT_LABEL.plis
 
 echo "== share extension:"
 pluginkit -m -A -v -i "$APP_ID.share" || echo "  (not visible — open $APP_NAME.app once, then re-run)"
-if [[ ! -f "$HOME/.config/send-to-my-bot/config.json" ]]; then
+if [[ ! -f "$HOME/.config/share-to-claw/config.json" ]]; then
     echo
-    echo "Next: one-time Telegram login (needs the code Telegram sends you)"
-    echo "    send-to-my-bot login"
+    echo "Next: configure destinations (asks only for what is missing)"
+    echo "    share-to-claw setup"
 fi

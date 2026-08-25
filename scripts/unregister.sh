@@ -1,10 +1,10 @@
 #!/bin/zsh
 # Unload the relay agent and deregister the share extension.
-# Usage: scripts/unregister.sh --app <SendToMyBot.app>
+# Usage: scripts/unregister.sh --app <ShareToClaw.app>
 set -euo pipefail
 
-APP_ID="app.sendtomybot"
-APP_NAME="SendToMyBot"
+APP_ID="app.sharetoclaw"
+APP_NAME="ShareToClaw"
 AGENT_LABEL="$APP_ID.relay"
 
 APP=""

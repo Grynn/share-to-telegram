@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>app.sendtomybot</string>
+	<string>app.sharetoclaw</string>
 	<key>CFBundleName</key>
-	<string>Send to My Bot</string>
+	<string>Share to Claw</string>
 	<key>CFBundleDisplayName</key>
-	<string>Send to My Bot</string>
+	<string>Share to Claw</string>
 	<key>CFBundleExecutable</key>
-	<string>SendToMyBot</string>
+	<string>ShareToClaw</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

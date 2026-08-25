@@ -1,16 +1,16 @@
 import AppKit
 
-/// Host app for the Send to My Bot share extension: shows whether the sender
+/// Host app for the Share to Claw share extension: shows whether the sender
 /// is configured, sends a test, and points at the logs. The real work happens
 /// in the share extension and the relay LaunchAgent.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private let statusLabel = NSTextField(wrappingLabelWithString: "Checking…")
 
-    private let support = NSHomeDirectory() + "/Library/Application Support/SendToMyBot"
-    private let logPath = NSHomeDirectory() + "/Library/Logs/SendToMyBot.log"
+    private let support = NSHomeDirectory() + "/Library/Application Support/ShareToClaw"
+    private let logPath = NSHomeDirectory() + "/Library/Logs/ShareToClaw.log"
 
-    private var script: String { support + "/bot_send.py" }
+    private var script: String { support + "/share_to_claw.py" }
 
     /// uv is not on a GUI app's PATH; look where it actually installs.
     private var uv: String? {
@@ -27,7 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let width: CGFloat = 520
         let content = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 232))
 
-        let title = NSTextField(labelWithString: "Send to My Bot")
+        let title = NSTextField(labelWithString: "Share to Claw")
         title.font = .boldSystemFont(ofSize: 17)
         title.frame = NSRect(x: 20, y: 192, width: width - 40, height: 24)
         content.addSubview(title)
@@ -35,7 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let help = NSTextField(wrappingLabelWithString:
             "Share URLs, text, images and PDFs from any app's share menu — to your Telegram "
             + "chat (as you, not a bot) or straight into the ytq video queue.\n\n"
-            + "First-time setup, in Terminal:   send-to-my-bot login")
+            + "First-time setup, in Terminal:   share-to-claw login")
         help.font = .systemFont(ofSize: 12)
         help.frame = NSRect(x: 20, y: 108, width: width - 40, height: 78)
         content.addSubview(help)
@@ -60,7 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window = NSWindow(contentRect: content.frame,
                           styleMask: [.titled, .closable, .miniaturizable],
                           backing: .buffered, defer: false)
-        window.title = "Send to My Bot"
+        window.title = "Share to Claw"
         window.contentView = content
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -80,7 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func sendTest() {
         statusLabel.stringValue = "Sending test message…"
-        runSender(["send", "--text", "Test message from the Send to My Bot app"]) { ok, output in
+        runSender(["send", "--text", "Test message from the Share to Claw app"]) { ok, output in
             self.statusLabel.stringValue = (ok ? "✅ " : "⚠️ ") + output
         }
     }
