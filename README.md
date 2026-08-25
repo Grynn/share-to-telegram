@@ -49,15 +49,30 @@ Share sheet
 
 ## Install
 
-Requirements: macOS 13+, Xcode (for `swiftc`), [uv](https://astral.sh/uv), and
-a Telegram account. `ytq` is optional — only needed for that destination.
+Requirements: macOS 13+, Xcode (for `swiftc` — the CLT alone can't build an app
+extension), [uv](https://astral.sh/uv), and a Telegram account. `ytq` is
+optional, only for that destination.
+
+### Homebrew
 
 ```sh
-./install.sh          # build, sign, install, register, load the agent
-send-to-my-bot login  # one-time: api_id/api_hash, phone, code, pick a chat
+brew install grynn/tap/send-to-my-bot
+send-to-my-bot setup    # register the extension, load the relay agent
+send-to-my-bot login    # one-time Telegram login
 ```
 
-`login` wants an **api_id / api_hash** from <https://my.telegram.org/apps>, then
+### From source
+
+```sh
+git clone https://github.com/Grynn/share-to-telegram.git
+cd share-to-telegram
+./install.sh            # build, sign, install to ~/Applications, register
+send-to-my-bot login
+```
+
+### The one-time login
+
+It wants an **api_id / api_hash** from <https://my.telegram.org/apps>, then
 the phone number and the login code Telegram sends you, then it lists your chats
 so you can pick a destination. Credentials and the session live in
 `~/.config/send-to-my-bot/` (mode 600) — never in this repo.
@@ -65,9 +80,12 @@ so you can pick a destination. Credentials and the session live in
 If "Send to My Bot" doesn't show up in a share menu, check
 System Settings → General → Login Items & Extensions → Sharing.
 
+### Uninstall
+
 ```sh
-./uninstall.sh            # remove app, extension, agent, CLI
-./uninstall.sh --purge    # …and the Telegram session/config
+send-to-my-bot unsetup && brew uninstall send-to-my-bot   # Homebrew
+./uninstall.sh                                            # from source
+./uninstall.sh --purge                                    # …and the session/config
 ```
 
 ## CLI
